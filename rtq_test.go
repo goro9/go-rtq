@@ -12,8 +12,7 @@ import (
 )
 
 func TestRoundTripQueues(t *testing.T) {
-	mockTransport := NewTransport()
-	mockTransport.SetMock("http://example.com",
+	mockTransport := NewTransport("http://example.com",
 		New().
 			ResponseSimple(200, `{"count": 1}`).
 			ResponseSimple(200, `{"count": 2}`),

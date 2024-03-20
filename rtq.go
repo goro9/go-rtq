@@ -20,9 +20,11 @@ type RoundTripQueues struct {
 
 var _ http.RoundTripper = (*RoundTripQueues)(nil)
 
-func NewTransport() *RoundTripQueues {
+func NewTransport(origin string, queueList ...*RoundTripQueue) *RoundTripQueues {
 	return &RoundTripQueues{
-		queues: map[string][]*RoundTripQueue{},
+		queues: map[string][]*RoundTripQueue{
+			origin: queueList,
+		},
 	}
 }
 
