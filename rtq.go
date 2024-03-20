@@ -34,8 +34,11 @@ func (qs *RoundTripQueues) SetMock(origin string, queueList ...*RoundTripQueue) 
 
 func (qs *RoundTripQueues) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Find a queue matching the request
-	q, ok := qs.find(req)
-	if !ok {
+	q, found, err := qs.find(req)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
 		qs.unmatchRequests = append(qs.unmatchRequests, req)
 		return nil, errors.New("mock is not registered")
 	}
@@ -54,71 +57,77 @@ func (qs *RoundTripQueues) Completed() bool {
 }
 
 // Find a queue that matches the passed request
-func (qs *RoundTripQueues) find(req *http.Request) (*RoundTripQueue, bool) {
-	return lo.Find(qs.queues[origin(req.URL)], func(q *RoundTripQueue) bool {
-		// Matches if the request contains all the headers in the queue.
-		for k := range q.request.header {
-			if q.request.header.Get(k) != req.Header.Get(k) {
-				return false
-			}
-		}
-		// Matches if the request contains all queries in the queue.
-		reqQuery := req.URL.Query()
-		for k := range q.request.query {
-			if q.request.query.Get(k) != reqQuery.Get(k) {
-				return false
-			}
-		}
+func (qs *RoundTripQueues) find(req *http.Request) (*RoundTripQueue, bool, error) {
+	queues, ok := qs.queues[origin(req.URL)]
+	if !ok {
+		return nil, false, errors.New("origin is not registered")
+	}
 
-		if q.request.method != nil && *q.request.method != req.Method {
-			return false
-		}
-		if q.request.url != nil && q.request.url.Path != req.URL.Path {
-			return false
-		}
-		if !q.matchBody(req) {
-			return false
-		}
-		// No match if queue is empty
+	var merr error
+	q, found := lo.Find(queues, func(q *RoundTripQueue) bool {
+		// If roundTrips is empty, it is treated as no match and the next matching queue is searched.
 		if len(q.roundTrips) == 0 {
 			return false
 		}
-		return true
+
+		m, err := q.match(req)
+		if err != nil {
+			merr = errors.Join(merr, err)
+		}
+		return m
 	})
+
+	return q, found, merr
 }
 
 func origin(u *url.URL) string {
 	return u.Scheme + "://" + u.Host
 }
 
+type MatchFunc func(*http.Request) (bool, error)
+
 // roundTrip queue
 type RoundTripQueue struct {
-	request    httpRequest
+	matchFuncs []MatchFunc
 	roundTrips []func(*http.Request) (*http.Response, error)
 }
 
 func New() *RoundTripQueue {
 	return &RoundTripQueue{
-		request: httpRequest{
-			header: make(http.Header),
-			query:  make(url.Values),
-		},
 		roundTrips: make([]func(*http.Request) (*http.Response, error), 0),
 	}
 }
 
+func (q *RoundTripQueue) match(req *http.Request) (bool, error) {
+	var merr error
+	m := lo.EveryBy(q.matchFuncs, func(f MatchFunc) bool {
+		m, err := f(req)
+		if err != nil {
+			merr = errors.Join(merr, err)
+		}
+		return m
+	})
+	return m, merr
+}
+
 func (q *RoundTripQueue) Header(key, value string) *RoundTripQueue {
-	q.request.header.Set(key, value)
+	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
+		return req.Header.Get(key) == value, nil
+	})
 	return q
 }
 
 func (q *RoundTripQueue) method(method string) *RoundTripQueue {
-	q.request.method = &method
+	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
+		return req.Method == method, nil
+	})
 	return q
 }
 
 func (q *RoundTripQueue) path(path string) *RoundTripQueue {
-	q.request.url = &url.URL{Path: path}
+	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
+		return req.URL.Path == path, nil
+	})
 	return q
 }
 
@@ -139,34 +148,27 @@ func (q *RoundTripQueue) Delete(path string) *RoundTripQueue {
 }
 
 func (q *RoundTripQueue) Query(key, value string) *RoundTripQueue {
-	q.request.query.Set(key, value)
+	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
+		return req.URL.Query().Get(key) == value, nil
+	})
 	return q
 }
 
 func (q *RoundTripQueue) BodyString(body string) *RoundTripQueue {
-	q.request.body = strings.NewReader(body)
+	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
+		got, err := io.ReadAll(req.Body)
+		if err != nil {
+			return false, err
+		}
+		req.Body = io.NopCloser(bytes.NewReader(got))
+		return string(got) == body, nil
+	})
 	return q
 }
 
-func (q *RoundTripQueue) matchBody(req *http.Request) bool {
-	if q.request.body == nil {
-		return true
-	}
-
-	// TODO streaming?
-	bl, err := io.ReadAll(req.Body)
-	if err != nil {
-		panic(err)
-	}
-	req.Body = io.NopCloser(bytes.NewBuffer(bl))
-
-	br, err := io.ReadAll(q.request.body)
-	if err != nil {
-		panic(err)
-	}
-	q.request.body = io.NopCloser(bytes.NewBuffer(br))
-
-	return bytes.Equal(bl, br)
+func (q *RoundTripQueue) Matcher(matchFunc MatchFunc) *RoundTripQueue {
+	q.matchFuncs = append(q.matchFuncs, matchFunc)
+	return q
 }
 
 func (q *RoundTripQueue) ResponseSimple(statusCode int, body string) *RoundTripQueue {
@@ -207,12 +209,4 @@ func (q *RoundTripQueue) Response(res *http.Response) *RoundTripQueue {
 func (q *RoundTripQueue) ResponseFunc(roundTrip func(*http.Request) (*http.Response, error)) *RoundTripQueue {
 	q.roundTrips = append(q.roundTrips, roundTrip)
 	return q
-}
-
-type httpRequest struct {
-	header http.Header
-	query  url.Values
-	method *string
-	url    *url.URL
-	body   io.Reader
 }
