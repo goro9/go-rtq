@@ -12,7 +12,7 @@ import (
 	"github.com/samber/lo"
 )
 
-// 特定のリクエスト毎に RoundTrip の queue を持ち、リクエストがマッチすれば queue から RoundTrip を取り出し実行する
+// Have a RoundTrip queue for each specific request, and if the request matches, retrieve the RoundTrip from the queue and execute it.
 type RoundTripQueues struct {
 	queues          map[string][]*RoundTripQueue
 	unmatchRequests []*http.Request
@@ -31,13 +31,13 @@ func (qs *RoundTripQueues) SetMock(origin string, queueList ...*RoundTripQueue) 
 }
 
 func (qs *RoundTripQueues) RoundTrip(req *http.Request) (*http.Response, error) {
-	// リクエストにマッチする queue を探す
+	// Find a queue matching the request
 	q, ok := qs.find(req)
 	if !ok {
 		qs.unmatchRequests = append(qs.unmatchRequests, req)
 		return nil, errors.New("mock is not registered")
 	}
-	// queue から roundTrip を取り出し実行する
+	// Retrieve the roundTrip from the queue and execute it
 	roundTrip := q.roundTrips[0]
 	q.roundTrips = q.roundTrips[1:]
 	return roundTrip(req)
@@ -51,16 +51,16 @@ func (qs *RoundTripQueues) Completed() bool {
 	return remaining == 0 && len(qs.unmatchRequests) == 0
 }
 
-// 渡されたリクエストにマッチする queue を探す
+// Find a queue that matches the passed request
 func (qs *RoundTripQueues) find(req *http.Request) (*RoundTripQueue, bool) {
 	return lo.Find(qs.queues[origin(req.URL)], func(q *RoundTripQueue) bool {
-		// queue でもつ header をリクエストが全て含んでいればマッチする
+		// Matches if the request contains all the headers in the queue.
 		for k := range q.request.header {
 			if q.request.header.Get(k) != req.Header.Get(k) {
 				return false
 			}
 		}
-		// queue でもつ query をリクエストが全て含んでいればマッチする
+		// Matches if the request contains all queries in the queue.
 		reqQuery := req.URL.Query()
 		for k := range q.request.query {
 			if q.request.query.Get(k) != reqQuery.Get(k) {
@@ -77,7 +77,7 @@ func (qs *RoundTripQueues) find(req *http.Request) (*RoundTripQueue, bool) {
 		if !q.matchBody(req) {
 			return false
 		}
-		// queueが空の場合はマッチしない
+		// No match if queue is empty
 		if len(q.roundTrips) == 0 {
 			return false
 		}
@@ -89,7 +89,7 @@ func origin(u *url.URL) string {
 	return u.Scheme + "://" + u.Host
 }
 
-// roundTrip の queue
+// roundTrip queue
 type RoundTripQueue struct {
 	request    httpRequest
 	roundTrips []func(*http.Request) (*http.Response, error)
