@@ -1,4 +1,4 @@
-package rtqueue
+package rtq
 
 import (
 	"bytes"
