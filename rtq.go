@@ -63,21 +63,20 @@ func (qs *RoundTripQueues) find(req *http.Request) (*RoundTripQueue, bool, error
 		return nil, false, errors.New("origin is not registered")
 	}
 
-	var merr error
-	q, found := lo.Find(queues, func(q *RoundTripQueue) bool {
+	for _, q := range queues {
 		// If roundTrips is empty, it is treated as no match and the next matching queue is searched.
-		if len(q.roundTrips) == 0 {
-			return false
+		if len(q.roundTrips) != 0 {
+			m, err := q.match(req)
+			if err != nil {
+				return nil, false, err
+			}
+			if m {
+				return q, true, nil
+			}
 		}
+	}
 
-		m, err := q.match(req)
-		if err != nil {
-			merr = errors.Join(merr, err)
-		}
-		return m
-	})
-
-	return q, found, merr
+	return nil, false, nil
 }
 
 func origin(u *url.URL) string {
@@ -99,15 +98,16 @@ func New() *RoundTripQueue {
 }
 
 func (q *RoundTripQueue) match(req *http.Request) (bool, error) {
-	var merr error
-	m := lo.EveryBy(q.matchFuncs, func(f MatchFunc) bool {
+	for _, f := range q.matchFuncs {
 		m, err := f(req)
 		if err != nil {
-			merr = errors.Join(merr, err)
+			return false, err
 		}
-		return m
-	})
-	return m, merr
+		if !m {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (q *RoundTripQueue) Header(key, value string) *RoundTripQueue {
