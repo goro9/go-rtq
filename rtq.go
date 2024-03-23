@@ -13,33 +13,33 @@ import (
 )
 
 // Have a RoundTrip queue for each specific request, and if the request matches, retrieve the RoundTrip from the queue and execute it.
-type RoundTripQueues struct {
+type MockTransport struct {
 	queues          map[string][]*RoundTripQueue
 	unmatchRequests []*http.Request
 }
 
-var _ http.RoundTripper = (*RoundTripQueues)(nil)
+var _ http.RoundTripper = (*MockTransport)(nil)
 
-func NewTransport(origin string, queueList ...*RoundTripQueue) *RoundTripQueues {
-	return &RoundTripQueues{
+func NewTransport(origin string, queueList ...*RoundTripQueue) *MockTransport {
+	return &MockTransport{
 		queues: map[string][]*RoundTripQueue{
 			origin: queueList,
 		},
 	}
 }
 
-func (qs *RoundTripQueues) SetMock(origin string, queueList ...*RoundTripQueue) {
-	qs.queues[origin] = queueList
+func (m *MockTransport) SetMock(origin string, queueList ...*RoundTripQueue) {
+	m.queues[origin] = queueList
 }
 
-func (qs *RoundTripQueues) RoundTrip(req *http.Request) (*http.Response, error) {
+func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Find a queue matching the request
-	q, found, err := qs.find(req)
+	q, found, err := m.find(req)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		qs.unmatchRequests = append(qs.unmatchRequests, req)
+		m.unmatchRequests = append(m.unmatchRequests, req)
 		return nil, errors.New("mock is not registered")
 	}
 	// Retrieve the roundTrip from the queue and execute it
@@ -48,17 +48,17 @@ func (qs *RoundTripQueues) RoundTrip(req *http.Request) (*http.Response, error) 
 	return roundTrip(req)
 }
 
-func (qs *RoundTripQueues) Completed() bool {
+func (m *MockTransport) Completed() bool {
 	remaining := lo.SumBy(
-		lo.Flatten(lo.Values(qs.queues)),
+		lo.Flatten(lo.Values(m.queues)),
 		func(q *RoundTripQueue) int { return len(q.roundTrips) },
 	)
-	return remaining == 0 && len(qs.unmatchRequests) == 0
+	return remaining == 0 && len(m.unmatchRequests) == 0
 }
 
 // Find a queue that matches the passed request
-func (qs *RoundTripQueues) find(req *http.Request) (*RoundTripQueue, bool, error) {
-	queues, ok := qs.queues[origin(req.URL)]
+func (m *MockTransport) find(req *http.Request) (*RoundTripQueue, bool, error) {
+	queues, ok := m.queues[origin(req.URL)]
 	if !ok {
 		return nil, false, errors.New("origin is not registered")
 	}
