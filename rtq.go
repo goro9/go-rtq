@@ -14,7 +14,7 @@ import (
 
 // Have a RoundTrip queue for each specific request, and if the request matches, retrieve the RoundTrip from the queue and execute it.
 type MockTransport struct {
-	queues          map[string][]*RoundTripQueue
+	queuesByOrigin  map[string][]*RoundTripQueue
 	unmatchRequests []*http.Request
 }
 
@@ -22,14 +22,14 @@ var _ http.RoundTripper = (*MockTransport)(nil)
 
 func NewTransport(origin string, queueList ...*RoundTripQueue) *MockTransport {
 	return &MockTransport{
-		queues: map[string][]*RoundTripQueue{
+		queuesByOrigin: map[string][]*RoundTripQueue{
 			origin: queueList,
 		},
 	}
 }
 
 func (m *MockTransport) SetMock(origin string, queueList ...*RoundTripQueue) {
-	m.queues[origin] = queueList
+	m.queuesByOrigin[origin] = queueList
 }
 
 func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -50,7 +50,7 @@ func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func (m *MockTransport) Completed() bool {
 	remaining := lo.SumBy(
-		lo.Flatten(lo.Values(m.queues)),
+		lo.Flatten(lo.Values(m.queuesByOrigin)),
 		func(q *RoundTripQueue) int { return len(q.roundTrips) },
 	)
 	return remaining == 0 && len(m.unmatchRequests) == 0
@@ -58,7 +58,7 @@ func (m *MockTransport) Completed() bool {
 
 // Find a queue that matches the passed request
 func (m *MockTransport) find(req *http.Request) (*RoundTripQueue, bool, error) {
-	queues, ok := m.queues[origin(req.URL)]
+	queues, ok := m.queuesByOrigin[origin(req.URL)]
 	if !ok {
 		return nil, false, errors.New("origin is not registered")
 	}
