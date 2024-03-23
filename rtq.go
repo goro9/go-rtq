@@ -20,16 +20,16 @@ type MockTransport struct {
 
 var _ http.RoundTripper = (*MockTransport)(nil)
 
-func NewTransport(origin string, queueList ...*RoundTripQueue) *MockTransport {
+func NewTransport(origin string, queues ...*RoundTripQueue) *MockTransport {
 	return &MockTransport{
 		queuesByOrigin: map[string][]*RoundTripQueue{
-			origin: queueList,
+			origin: queues,
 		},
 	}
 }
 
-func (m *MockTransport) SetMock(origin string, queueList ...*RoundTripQueue) {
-	m.queuesByOrigin[origin] = queueList
+func (m *MockTransport) SetMock(origin string, queues ...*RoundTripQueue) {
+	m.queuesByOrigin[origin] = queues
 }
 
 func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
