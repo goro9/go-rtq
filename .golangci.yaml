@@ -1,0 +1,12 @@
+run:
+  timeout: 10m
+
+linters:
+  disable-all: false
+  enable:
+    - misspell
+    - gocognit
+
+linters-settings:
+  gocognit:
+    min-complexity: 20
