@@ -42,6 +42,9 @@ func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		m.unmatchRequests = append(m.unmatchRequests, req)
 		return nil, errors.New("mock is not registered")
 	}
+	if len(q.roundTripFuncs) == 0 {
+		return nil, errors.New("queue is found but it's empty")
+	}
 	// Retrieve the roundTrip from the queue and execute it
 	roundTrip := q.roundTripFuncs[0]
 	q.roundTripFuncs = q.roundTripFuncs[1:]
