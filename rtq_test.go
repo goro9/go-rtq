@@ -178,10 +178,28 @@ func TestRoundTripQueues(t *testing.T) {
 		})
 	}
 
-	if e, g := 6, len(mockTransport.unmatchRequests); e != g {
+	{
+		expect := `1: GET http://example.com/1/sample
+2: GET http://example.com/1/sample
+3: GET http://example.com/1/sample (not matched)
+4: GET http://example.com/1/sample (not matched)
+5: GET http://example.com/2/sample (not matched)
+6: GET http://example.com/2/sample
+7: POST http://example.com/2/sample
+8: GET http://example.com/3/sample?test=fuga (not matched)
+9: GET http://example.com/3/sample?test=hoge
+10: GET http://example.com/4/sample (not matched)
+11: GET http://example.com/4/sample
+12: GET http://example.com/1/sample (not matched)
+13: GET http://example2.com/1/sample`
+		if diff := cmp.Diff(expect, mockTransport.RequestLogString()); diff != "" {
+			t.Errorf("unexpected request logs: %s", diff)
+		}
+	}
+	if e, g := 6, len(mockTransport.unmatchRequests()); e != g {
 		t.Errorf("unexpected unmatchRequests length: expected %d, got %d", e, g)
 	}
-	mockTransport.unmatchRequests = nil
+	mockTransport.requestLogs = nil
 	if !mockTransport.Completed() {
 		t.Errorf("mockTransport is not empty")
 	}
