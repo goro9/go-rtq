@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,8 +15,8 @@ import (
 
 // Have a RoundTrip queue for each specific request, and if the request matches, retrieve the RoundTrip from the queue and execute it.
 type MockTransport struct {
-	queuesByOrigin  map[string][]*RoundTripQueue
-	unmatchRequests []*http.Request
+	queuesByOrigin map[string][]*RoundTripQueue
+	requestLogs    []requestLog
 }
 
 var _ http.RoundTripper = (*MockTransport)(nil)
@@ -39,16 +40,21 @@ func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	if !found {
-		m.unmatchRequests = append(m.unmatchRequests, req)
+		m.requestLogs = append(m.requestLogs, requestLog{matched: false, request: req})
 		return nil, errors.New("mock is not registered")
 	}
-	if len(q.roundTripFuncs) == 0 {
-		return nil, errors.New("queue is found but it's empty")
-	}
+	m.requestLogs = append(m.requestLogs, requestLog{matched: true, request: req})
 	// Retrieve the roundTrip from the queue and execute it
+	// In the find method, queues with len(roundTripFuncs) of 0 are not matched, so it is guaranteed that len(roundTripFuncs) is 1 or more.
 	roundTrip := q.roundTripFuncs[0]
 	q.roundTripFuncs = q.roundTripFuncs[1:]
 	return roundTrip(req)
+}
+
+func (m *MockTransport) unmatchRequests() []*http.Request {
+	return lo.FilterMap(m.requestLogs, func(l requestLog, _ int) (*http.Request, bool) {
+		return l.request, !l.matched
+	})
 }
 
 func (m *MockTransport) Completed() bool {
@@ -56,7 +62,14 @@ func (m *MockTransport) Completed() bool {
 		lo.Flatten(lo.Values(m.queuesByOrigin)),
 		func(q *RoundTripQueue) int { return len(q.roundTripFuncs) },
 	)
-	return remaining == 0 && len(m.unmatchRequests) == 0
+	return remaining == 0 && len(m.unmatchRequests()) == 0
+}
+
+func (m *MockTransport) RequestLogString() string {
+	return strings.Join(
+		lo.Map(m.requestLogs, func(l requestLog, i int) string { return fmt.Sprintf("%d: %s", i+1, l.String()) }),
+		"\n",
+	)
 }
 
 // Find a queue that matches the passed request
@@ -212,4 +225,17 @@ func (q *RoundTripQueue) Response(res *http.Response) *RoundTripQueue {
 func (q *RoundTripQueue) ResponseFunc(roundTrip func(*http.Request) (*http.Response, error)) *RoundTripQueue {
 	q.roundTripFuncs = append(q.roundTripFuncs, roundTrip)
 	return q
+}
+
+type requestLog struct {
+	matched bool
+	request *http.Request
+}
+
+func (l requestLog) String() string {
+	s := fmt.Sprintf("%s %s", l.request.Method, l.request.URL.String())
+	if !l.matched {
+		s += " (not matched)"
+	}
+	return s
 }
