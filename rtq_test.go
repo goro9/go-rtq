@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -203,4 +204,40 @@ func TestRoundTripQueues(t *testing.T) {
 	if !mockTransport.Completed() {
 		t.Errorf("mockTransport is not empty")
 	}
+}
+
+func TestMockTransportParallel(t *testing.T) {
+	queue1 := New()
+	for i := 0; i < 100; i++ {
+		queue1 = queue1.ResponseSimple(200, fmt.Sprintf(`{"queue_index":1,"count":%d}`, i))
+	}
+	queue2 := New()
+	for i := 0; i < 100; i++ {
+		queue2 = queue2.ResponseSimple(200, fmt.Sprintf(`{"queue_index":2,"count":%d}`, i))
+	}
+	cnt := 100 + 100
+
+	var wg sync.WaitGroup
+	wg.Add(cnt)
+
+	mockTransport := NewTransport("http://example.com", queue1, queue2)
+
+	client := http.Client{Transport: mockTransport}
+
+	for i := 0; i < cnt; i++ {
+		req := lo.Must1(http.NewRequest("GET", fmt.Sprintf("http://example.com/request%d", i), nil))
+		go func() {
+			res, err := client.Do(req)
+			if err != nil {
+				t.Error(err)
+			}
+			t.Log(res.StatusCode, string(lo.Must1(io.ReadAll(res.Body))))
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	if !mockTransport.Completed() {
+		t.Error("mockTransport is not empty")
+	}
+	t.Log(mockTransport.RequestLogString())
 }
