@@ -51,27 +51,6 @@ func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return roundTrip(req)
 }
 
-func (m *MockTransport) unmatchRequests() []*http.Request {
-	return lo.FilterMap(m.requestLogs, func(l requestLog, _ int) (*http.Request, bool) {
-		return l.request, !l.matched
-	})
-}
-
-func (m *MockTransport) Completed() bool {
-	remaining := lo.SumBy(
-		lo.Flatten(lo.Values(m.queuesByOrigin)),
-		func(q *RoundTripQueue) int { return len(q.roundTripFuncs) },
-	)
-	return remaining == 0 && len(m.unmatchRequests()) == 0
-}
-
-func (m *MockTransport) RequestLogString() string {
-	return strings.Join(
-		lo.Map(m.requestLogs, func(l requestLog, i int) string { return fmt.Sprintf("%d: %s", i+1, l.String()) }),
-		"\n",
-	)
-}
-
 // Find a queue that matches the passed request
 func (m *MockTransport) find(req *http.Request) (*RoundTripQueue, bool, error) {
 	queues, ok := m.queuesByOrigin[origin(req.URL)]
@@ -93,6 +72,27 @@ func (m *MockTransport) find(req *http.Request) (*RoundTripQueue, bool, error) {
 	}
 
 	return nil, false, nil
+}
+
+func (m *MockTransport) unmatchRequests() []*http.Request {
+	return lo.FilterMap(m.requestLogs, func(l requestLog, _ int) (*http.Request, bool) {
+		return l.request, !l.matched
+	})
+}
+
+func (m *MockTransport) Completed() bool {
+	remaining := lo.SumBy(
+		lo.Flatten(lo.Values(m.queuesByOrigin)),
+		func(q *RoundTripQueue) int { return len(q.roundTripFuncs) },
+	)
+	return remaining == 0 && len(m.unmatchRequests()) == 0
+}
+
+func (m *MockTransport) RequestLogString() string {
+	return strings.Join(
+		lo.Map(m.requestLogs, func(l requestLog, i int) string { return fmt.Sprintf("%d: %s", i+1, l.String()) }),
+		"\n",
+	)
 }
 
 func origin(u *url.URL) string {
