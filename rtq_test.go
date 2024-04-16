@@ -12,7 +12,7 @@ import (
 	"github.com/samber/lo"
 )
 
-func TestRoundTripQueues(t *testing.T) {
+func TestMockTransport(t *testing.T) {
 	mockTransport := NewTransport("http://example.com",
 		New().
 			ResponseSimple(200, `{"count": 1}`).
