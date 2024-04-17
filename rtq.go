@@ -21,16 +21,16 @@ type MockTransport struct {
 
 var _ http.RoundTripper = (*MockTransport)(nil)
 
-func NewTransport(origin string, queues ...*RoundTripQueue) *MockTransport {
+func NewTransport(origin string, queues ...RoundTripQueue) *MockTransport {
 	return &MockTransport{
 		queuesByOrigin: map[string][]*RoundTripQueue{
-			origin: queues,
+			origin: lo.ToSlicePtr(queues),
 		},
 	}
 }
 
-func (m *MockTransport) SetMock(origin string, queues ...*RoundTripQueue) {
-	m.queuesByOrigin[origin] = queues
+func (m *MockTransport) SetMock(origin string, queues ...RoundTripQueue) {
+	m.queuesByOrigin[origin] = lo.ToSlicePtr(queues)
 }
 
 func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -107,13 +107,13 @@ type RoundTripQueue struct {
 	roundTripFuncs []func(*http.Request) (*http.Response, error)
 }
 
-func New() *RoundTripQueue {
-	return &RoundTripQueue{
+func New() RoundTripQueue {
+	return RoundTripQueue{
 		roundTripFuncs: make([]func(*http.Request) (*http.Response, error), 0),
 	}
 }
 
-func (q *RoundTripQueue) match(req *http.Request) (bool, error) {
+func (q RoundTripQueue) match(req *http.Request) (bool, error) {
 	for _, f := range q.matchFuncs {
 		m, err := f(req)
 		if err != nil {
@@ -126,51 +126,51 @@ func (q *RoundTripQueue) match(req *http.Request) (bool, error) {
 	return true, nil
 }
 
-func (q *RoundTripQueue) Header(key, value string) *RoundTripQueue {
+func (q RoundTripQueue) Header(key, value string) RoundTripQueue {
 	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
 		return req.Header.Get(key) == value, nil
 	})
 	return q
 }
 
-func (q *RoundTripQueue) method(method string) *RoundTripQueue {
+func (q RoundTripQueue) method(method string) RoundTripQueue {
 	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
 		return req.Method == method, nil
 	})
 	return q
 }
 
-func (q *RoundTripQueue) path(path string) *RoundTripQueue {
+func (q RoundTripQueue) path(path string) RoundTripQueue {
 	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
 		return req.URL.Path == path, nil
 	})
 	return q
 }
 
-func (q *RoundTripQueue) Get(path string) *RoundTripQueue {
+func (q RoundTripQueue) Get(path string) RoundTripQueue {
 	return q.method(http.MethodGet).path(path)
 }
 
-func (q *RoundTripQueue) Post(path string) *RoundTripQueue {
+func (q RoundTripQueue) Post(path string) RoundTripQueue {
 	return q.method(http.MethodPost).path(path)
 }
 
-func (q *RoundTripQueue) Put(path string) *RoundTripQueue {
+func (q RoundTripQueue) Put(path string) RoundTripQueue {
 	return q.method(http.MethodPut).path(path)
 }
 
-func (q *RoundTripQueue) Delete(path string) *RoundTripQueue {
+func (q RoundTripQueue) Delete(path string) RoundTripQueue {
 	return q.method(http.MethodDelete).path(path)
 }
 
-func (q *RoundTripQueue) Query(key, value string) *RoundTripQueue {
+func (q RoundTripQueue) Query(key, value string) RoundTripQueue {
 	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
 		return req.URL.Query().Get(key) == value, nil
 	})
 	return q
 }
 
-func (q *RoundTripQueue) BodyString(body string) *RoundTripQueue {
+func (q RoundTripQueue) BodyString(body string) RoundTripQueue {
 	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
 		got, err := io.ReadAll(req.Body)
 		if err != nil {
@@ -182,12 +182,12 @@ func (q *RoundTripQueue) BodyString(body string) *RoundTripQueue {
 	return q
 }
 
-func (q *RoundTripQueue) Matcher(matchFunc MatchFunc) *RoundTripQueue {
+func (q RoundTripQueue) Matcher(matchFunc MatchFunc) RoundTripQueue {
 	q.matchFuncs = append(q.matchFuncs, matchFunc)
 	return q
 }
 
-func (q *RoundTripQueue) ResponseSimple(statusCode int, body string) *RoundTripQueue {
+func (q RoundTripQueue) ResponseSimple(statusCode int, body string) RoundTripQueue {
 	q.roundTripFuncs = append(q.roundTripFuncs, func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: statusCode,
@@ -198,7 +198,7 @@ func (q *RoundTripQueue) ResponseSimple(statusCode int, body string) *RoundTripQ
 	return q
 }
 
-func (q *RoundTripQueue) ResponseJSON(statusCode int, body any) *RoundTripQueue {
+func (q RoundTripQueue) ResponseJSON(statusCode int, body any) RoundTripQueue {
 	b, err := json.Marshal(body)
 	if err != nil {
 		panic(err)
@@ -215,14 +215,14 @@ func (q *RoundTripQueue) ResponseJSON(statusCode int, body any) *RoundTripQueue 
 	return q
 }
 
-func (q *RoundTripQueue) Response(res *http.Response) *RoundTripQueue {
+func (q RoundTripQueue) Response(res *http.Response) RoundTripQueue {
 	q.roundTripFuncs = append(q.roundTripFuncs, func(req *http.Request) (*http.Response, error) {
 		return res, nil
 	})
 	return q
 }
 
-func (q *RoundTripQueue) ResponseFunc(roundTrip func(*http.Request) (*http.Response, error)) *RoundTripQueue {
+func (q RoundTripQueue) ResponseFunc(roundTrip func(*http.Request) (*http.Response, error)) RoundTripQueue {
 	q.roundTripFuncs = append(q.roundTripFuncs, roundTrip)
 	return q
 }
