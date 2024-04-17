@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
+	lop "github.com/samber/lo/parallel"
 )
 
 func TestMockTransport(t *testing.T) {
@@ -217,25 +217,20 @@ func TestMockTransportParallel(t *testing.T) {
 	}
 	cnt := 100 + 100
 
-	var wg sync.WaitGroup
-	wg.Add(cnt)
-
 	mockTransport := NewTransport("http://example.com", queue1, queue2)
 
 	client := http.Client{Transport: mockTransport}
 
-	for i := 0; i < cnt; i++ {
+	_ = lop.Times(cnt, func(i int) *http.Response {
 		req := lo.Must1(http.NewRequest("GET", fmt.Sprintf("http://example.com/request%d", i), nil))
-		go func() {
-			res, err := client.Do(req)
-			if err != nil {
-				t.Error(err)
-			}
-			t.Log(res.StatusCode, string(lo.Must1(io.ReadAll(res.Body))))
-			wg.Done()
-		}()
-	}
-	wg.Wait()
+		res, err := client.Do(req)
+		if err != nil {
+			t.Error(err)
+		}
+		t.Log(res.StatusCode, string(lo.Must1(io.ReadAll(res.Body))))
+		return res
+	})
+
 	if !mockTransport.Completed() {
 		t.Error("mockTransport is not empty")
 	}
