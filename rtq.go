@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/samber/lo"
 )
@@ -17,6 +18,7 @@ import (
 type MockTransport struct {
 	queuesByOrigin map[string][]*RoundTripQueue
 	requestLogs    []requestLog
+	mu             sync.Mutex
 }
 
 var _ http.RoundTripper = (*MockTransport)(nil)
@@ -34,6 +36,17 @@ func (m *MockTransport) SetMock(origin string, queues ...RoundTripQueue) {
 }
 
 func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	roundTrip, err := m.dequeue(req)
+	if err != nil {
+		return nil, err
+	}
+	return roundTrip(req)
+}
+
+func (m *MockTransport) dequeue(req *http.Request) (func(*http.Request) (*http.Response, error), error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// Find a queue matching the request
 	q, found, err := m.find(req)
 	if err != nil {
@@ -48,28 +61,8 @@ func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// In the find method, queues with len(roundTripFuncs) of 0 are not matched, so it is guaranteed that len(roundTripFuncs) is 1 or more.
 	roundTrip := q.roundTripFuncs[0]
 	q.roundTripFuncs = q.roundTripFuncs[1:]
-	return roundTrip(req)
-}
 
-func (m *MockTransport) unmatchRequests() []*http.Request {
-	return lo.FilterMap(m.requestLogs, func(l requestLog, _ int) (*http.Request, bool) {
-		return l.request, !l.matched
-	})
-}
-
-func (m *MockTransport) Completed() bool {
-	remaining := lo.SumBy(
-		lo.Flatten(lo.Values(m.queuesByOrigin)),
-		func(q *RoundTripQueue) int { return len(q.roundTripFuncs) },
-	)
-	return remaining == 0 && len(m.unmatchRequests()) == 0
-}
-
-func (m *MockTransport) RequestLogString() string {
-	return strings.Join(
-		lo.Map(m.requestLogs, func(l requestLog, i int) string { return fmt.Sprintf("%d: %s", i+1, l.String()) }),
-		"\n",
-	)
+	return roundTrip, nil
 }
 
 // Find a queue that matches the passed request
@@ -93,6 +86,27 @@ func (m *MockTransport) find(req *http.Request) (*RoundTripQueue, bool, error) {
 	}
 
 	return nil, false, nil
+}
+
+func (m *MockTransport) unmatchRequests() []*http.Request {
+	return lo.FilterMap(m.requestLogs, func(l requestLog, _ int) (*http.Request, bool) {
+		return l.request, !l.matched
+	})
+}
+
+func (m *MockTransport) Completed() bool {
+	remaining := lo.SumBy(
+		lo.Flatten(lo.Values(m.queuesByOrigin)),
+		func(q *RoundTripQueue) int { return len(q.roundTripFuncs) },
+	)
+	return remaining == 0 && len(m.unmatchRequests()) == 0
+}
+
+func (m *MockTransport) RequestLogString() string {
+	return strings.Join(
+		lo.Map(m.requestLogs, func(l requestLog, i int) string { return fmt.Sprintf("%d: %s", i+1, l.String()) }),
+		"\n",
+	)
 }
 
 func origin(u *url.URL) string {
