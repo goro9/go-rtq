@@ -13,7 +13,7 @@ import (
 )
 
 func TestMockTransport(t *testing.T) {
-	mockTransport := NewTransport("http://example.com",
+	mockTransport := NewTransport().Origin("http://example.com",
 		New().
 			ResponseSimple(200, `{"count": 1}`).
 			ResponseSimple(200, `{"count": 2}`),
@@ -26,7 +26,7 @@ func TestMockTransport(t *testing.T) {
 		New().BodyString(`{"test":"hoge"}`).
 			ResponseSimple(200, `{"count": 6}`),
 	)
-	mockTransport.SetMock("http://example2.com",
+	mockTransport.Origin("http://example2.com",
 		New().ResponseSimple(200, `{"count": 1}`),
 	)
 
@@ -217,7 +217,7 @@ func TestMockTransportParallel(t *testing.T) {
 	}
 	cnt := 100 + 100
 
-	mockTransport := NewTransport("http://example.com", queue1, queue2)
+	mockTransport := NewTransport().Origin("http://example.com", queue1, queue2)
 
 	client := http.Client{Transport: mockTransport}
 
