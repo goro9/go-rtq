@@ -16,22 +16,17 @@ import (
 
 // Have a RoundTrip queue for each specific request, and if the request matches, retrieve the RoundTrip from the queue and execute it.
 type MockTransport struct {
-	queuesByOrigin map[string][]*RoundTripQueue
-	requestLogs    []requestLog
-	mu             sync.Mutex
+	queues      []*RoundTripQueue
+	requestLogs []requestLog
+	mu          sync.Mutex
 }
 
 var _ http.RoundTripper = (*MockTransport)(nil)
 
-func NewTransport() *MockTransport {
+func NewTransport(queues ...RoundTripQueue) *MockTransport {
 	return &MockTransport{
-		queuesByOrigin: map[string][]*RoundTripQueue{},
+		queues: lo.ToSlicePtr(queues),
 	}
-}
-
-func (m *MockTransport) Origin(origin string, queues ...RoundTripQueue) *MockTransport {
-	m.queuesByOrigin[origin] = lo.ToSlicePtr(queues)
-	return m
 }
 
 func (m *MockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -66,12 +61,8 @@ func (m *MockTransport) dequeue(req *http.Request) (func(*http.Request) (*http.R
 
 // Find a queue that matches the passed request
 func (m *MockTransport) find(req *http.Request) (*RoundTripQueue, bool, error) {
-	queues, ok := m.queuesByOrigin[origin(req.URL)]
-	if !ok {
-		return nil, false, errors.New("origin is not registered")
-	}
-
-	for _, q := range queues {
+	fmt.Println(len(m.queues))
+	for _, q := range m.queues {
 		// If roundTripFuncs is empty, it is treated as no match and the next matching queue is searched.
 		if len(q.roundTripFuncs) != 0 {
 			m, err := q.match(req)
@@ -95,7 +86,7 @@ func (m *MockTransport) unmatchRequests() []*http.Request {
 
 func (m *MockTransport) Completed() bool {
 	remaining := lo.SumBy(
-		lo.Flatten(lo.Values(m.queuesByOrigin)),
+		m.queues,
 		func(q *RoundTripQueue) int { return len(q.roundTripFuncs) },
 	)
 	return remaining == 0 && len(m.unmatchRequests()) == 0
@@ -137,6 +128,13 @@ func (q RoundTripQueue) match(req *http.Request) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+func (q RoundTripQueue) Origin(origin string) RoundTripQueue {
+	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
+		return req.URL.Scheme+"://"+req.URL.Host == origin, nil
+	})
+	return q
 }
 
 func (q RoundTripQueue) Header(key, value string) RoundTripQueue {
