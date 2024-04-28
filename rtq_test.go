@@ -13,21 +13,21 @@ import (
 )
 
 func TestMockTransport(t *testing.T) {
-	mockTransport := NewTransport().Origin("http://example.com",
-		New().
+	q1 := New().Origin("http://example.com")
+	mockTransport := NewTransport(
+		q1.
 			ResponseSimple(200, `{"count": 1}`).
 			ResponseSimple(200, `{"count": 2}`),
-		New().Post("/2/sample").
+		q1.Post("/2/sample").
 			ResponseSimple(200, `{"count": 4}`),
-		New().Header("Authorization", "Bearer test").Get("/2/sample").
+		q1.Header("Authorization", "Bearer test").Get("/2/sample").
 			ResponseSimple(200, `{"count": 3}`),
-		New().Query("test", "hoge").
+		q1.Query("test", "hoge").
 			ResponseSimple(200, `{"count": 5}`),
-		New().BodyString(`{"test":"hoge"}`).
+		q1.BodyString(`{"test":"hoge"}`).
 			ResponseSimple(200, `{"count": 6}`),
-	)
-	mockTransport.Origin("http://example2.com",
-		New().ResponseSimple(200, `{"count": 1}`),
+		New().Origin("http://example2.com").
+			ResponseSimple(200, `{"count": 1}`),
 	)
 
 	client := http.Client{Transport: mockTransport}
@@ -207,17 +207,17 @@ func TestMockTransport(t *testing.T) {
 }
 
 func TestMockTransportParallel(t *testing.T) {
-	queue1 := New()
+	queue1 := New().Origin("http://example.com")
 	for i := 0; i < 100; i++ {
 		queue1 = queue1.ResponseSimple(200, fmt.Sprintf(`{"queue_index":1,"count":%d}`, i))
 	}
-	queue2 := New()
+	queue2 := New().Origin("http://example.com")
 	for i := 0; i < 100; i++ {
 		queue2 = queue2.ResponseSimple(200, fmt.Sprintf(`{"queue_index":2,"count":%d}`, i))
 	}
 	cnt := 100 + 100
 
-	mockTransport := NewTransport().Origin("http://example.com", queue1, queue2)
+	mockTransport := NewTransport(queue1, queue2)
 
 	client := http.Client{Transport: mockTransport}
 
