@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 
@@ -61,7 +60,6 @@ func (m *MockTransport) dequeue(req *http.Request) (func(*http.Request) (*http.R
 
 // Find a queue that matches the passed request
 func (m *MockTransport) find(req *http.Request) (*RoundTripQueue, bool, error) {
-	fmt.Println(len(m.queues))
 	for _, q := range m.queues {
 		// If roundTripFuncs is empty, it is treated as no match and the next matching queue is searched.
 		if len(q.roundTripFuncs) != 0 {
@@ -99,10 +97,6 @@ func (m *MockTransport) RequestLogString() string {
 	)
 }
 
-func origin(u *url.URL) string {
-	return u.Scheme + "://" + u.Host
-}
-
 type MatchFunc func(*http.Request) (bool, error)
 
 // roundTrip queue
@@ -111,8 +105,14 @@ type RoundTripQueue struct {
 	roundTripFuncs []func(*http.Request) (*http.Response, error)
 }
 
-func New() RoundTripQueue {
+func New(origin string) RoundTripQueue {
+	matchFuncs := []MatchFunc{
+		func(req *http.Request) (bool, error) {
+			return req.URL.Scheme+"://"+req.URL.Host == origin, nil
+		},
+	}
 	return RoundTripQueue{
+		matchFuncs:     matchFuncs,
 		roundTripFuncs: make([]func(*http.Request) (*http.Response, error), 0),
 	}
 }
@@ -128,13 +128,6 @@ func (q RoundTripQueue) match(req *http.Request) (bool, error) {
 		}
 	}
 	return true, nil
-}
-
-func (q RoundTripQueue) Origin(origin string) RoundTripQueue {
-	q.matchFuncs = append(q.matchFuncs, func(req *http.Request) (bool, error) {
-		return req.URL.Scheme+"://"+req.URL.Host == origin, nil
-	})
-	return q
 }
 
 func (q RoundTripQueue) Header(key, value string) RoundTripQueue {
