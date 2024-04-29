@@ -105,10 +105,10 @@ type RoundTripQueue struct {
 	roundTripFuncs []func(*http.Request) (*http.Response, error)
 }
 
-func New(urlPrefix string) RoundTripQueue {
+func New(origin string) RoundTripQueue {
 	matchFuncs := []MatchFunc{
 		func(req *http.Request) (bool, error) {
-			return strings.HasPrefix(req.URL.String(), urlPrefix), nil
+			return req.URL.Scheme+"://"+req.URL.Host == origin, nil
 		},
 	}
 	return RoundTripQueue{
