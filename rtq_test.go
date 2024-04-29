@@ -13,7 +13,7 @@ import (
 )
 
 func TestMockTransport(t *testing.T) {
-	q1 := New().Origin("http://example.com")
+	q1 := New("http://example.com")
 	mockTransport := NewTransport(
 		q1.
 			ResponseSimple(200, `{"count": 1}`).
@@ -26,7 +26,7 @@ func TestMockTransport(t *testing.T) {
 			ResponseSimple(200, `{"count": 5}`),
 		q1.BodyString(`{"test":"hoge"}`).
 			ResponseSimple(200, `{"count": 6}`),
-		New().Origin("http://example2.com").
+		New("http://example2.com").
 			ResponseSimple(200, `{"count": 1}`),
 	)
 
@@ -207,11 +207,11 @@ func TestMockTransport(t *testing.T) {
 }
 
 func TestMockTransportParallel(t *testing.T) {
-	queue1 := New().Origin("http://example.com")
+	queue1 := New("http://example.com")
 	for i := 0; i < 100; i++ {
 		queue1 = queue1.ResponseSimple(200, fmt.Sprintf(`{"queue_index":1,"count":%d}`, i))
 	}
-	queue2 := New().Origin("http://example.com")
+	queue2 := New("http://example.com")
 	for i := 0; i < 100; i++ {
 		queue2 = queue2.ResponseSimple(200, fmt.Sprintf(`{"queue_index":2,"count":%d}`, i))
 	}
